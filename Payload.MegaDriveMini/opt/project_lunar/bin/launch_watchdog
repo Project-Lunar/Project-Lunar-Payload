@@ -1,0 +1,10 @@
+#!/bin/sh
+
+while true; do
+	if [ -f "/tmp/launchfilecommand" ]; then
+		value=$(cat /tmp/launchfilecommand)
+		rm -f "/tmp/launchfilecommand"
+		${value} &
+	fi
+	sleep 0.5
+done

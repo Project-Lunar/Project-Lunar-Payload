@@ -1,0 +1,1 @@
+ACTION=="add|remove", SUBSYSTEM=="net", RUN+="/etc/init.d/S97_PL_90_networking reload"

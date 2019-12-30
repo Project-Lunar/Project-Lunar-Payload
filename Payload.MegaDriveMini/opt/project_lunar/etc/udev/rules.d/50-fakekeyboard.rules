@@ -1,0 +1,1 @@
+SUBSYSTEM=="input", ATTRS{name}=="uinput_keyboard", MODE="0666", ENV{ID_INPUT_KEYBOARD}="1"

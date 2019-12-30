@@ -1,0 +1,17 @@
+#!/bin/sh
+
+while true; do
+	if [ -f "/tmp/.xsparameter.sem" ] && [ ! -f "/tmp/.dontrestart" ]; then
+    sleep 1.0
+    killall shutdown-detection
+		rm -f "/tmp/.xsparameter.sem"
+    echo "[PROJECT LUNAR](ERROR) A Ex error occured! Restarting into m2engage" >> "/tmp/project_lunar.log"
+    clear_fb
+    project_lunar sdl_text "ERROR: A stock Error occured!! Opening Boot Menu in 5 secs..."
+		sleep 5
+    killall "sdl_display"
+    killall aplay es_bg_music &> "/dev/null" # Just incase
+    start_bootmenu
+	fi
+	sleep 0.5
+done

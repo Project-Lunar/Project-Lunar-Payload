@@ -1,0 +1,320 @@
+#!/bin/sh
+#
+#  Copyright 2019 ModMyClassic (https://modmyclassic.com/license)
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+###############################################################################
+# Project Lunar - Primary Mod INITRD Uninstaller
+# ModMyClassic.com / https://discordapp.com/invite/8gygsrw
+###############################################################################
+
+###############################################################################
+### Configuration
+
+###############################################################################
+### Local Variables
+
+TMP_MOUNT="/tmp/mount/nandd"
+PROJECTLUNAR_PATH="/opt/project_lunar"
+BACKUPFILES_PATH="/tmp"
+
+###############################################################################
+### Local Functions
+
+led_flash() {
+  SLEEP=0.2
+  while true; do
+    echo 0 >/sys/class/leds/led1/brightness
+    sleep ${SLEEP}
+    echo 255 >/sys/class/leds/led1/brightness
+    sleep ${SLEEP}
+  done
+}
+
+kill_ui_programs() {
+  killall -s TERM sdl_display retroarch emulationstation boot_menu start_retroarch start_emustation start_bootmenu start_m2engage aplay es_bg_music &> "/dev/null" &>"/dev/null"
+  ${TMP_MOUNT}/etc/init.d/moon-game &>"/dev/null"
+}
+
+revert_nandg() {
+  if [ ! -z "$(grep /dev/nandg ${TMP_MOUNT}/etc/fstab)" ]; then
+    echo "[PROJECT LUNAR](UNINSTALL) Reverting extra partition..."
+    umount -f "${TMP_MOUNT}${PROJECTLUNAR_PATH}"
+    dd if="/dev/zero" of="/dev/nandg" bs=1M
+    umount -f "${TMP_MOUNT}${PROJECTLUNAR_PATH}"
+    rm -rf "/dev/nandg"
+    [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "ro" ] && mount -o remount,rw "/" && RW_CHANGE=1
+    sed -i 's+/dev/nandg      /opt/project_lunar      ext4    defaults,rw        0       0++g' "${TMP_MOUNT}/etc/fstab"
+    rm -rf "${TMP_MOUNT}${PROJECTLUNAR_PATH}"
+    rm -rf "${TMP_MOUNT}/rootfs_data/project_lunar"
+    rm -rf "${TMP_MOUNT}/root/.ash_history"
+    rm -rf "${TMP_MOUNT}/root/.para"
+    for x in "${TMP_MOUNT}/etc/init.d/"*"_PL"*; do
+      rm -rf "${x}"
+    done
+    [ ! -z ${RW_CHANGE} ] && [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "rw" ] && mount -o remount,ro "/"
+    echo "[PROJECT LUNAR](UNINSTALL) Reverted extra partition..."
+  fi
+}
+
+toggle_overmount() {
+  if [ "${1}" != "0" ] && [ "${1}" != "1" ]; then
+    echo "[PROJECT LUNAR](ERROR) Bad usage of toggle_overmount()" && return 1
+  fi
+  KEY_DIRECTORIES="bin;etc;lib;var;usr/libexec;usr/local"
+  # check_libexec
+  if [ "${1}" = "1" ]; then
+    echo "[PROJECT LUNAR](UNINSTALL) Not required for uninstall..."
+  else
+    echo "[PROJECT LUNAR](UNINSTALL) Unmounting key directories..."
+    for x in ${KEY_DIRECTORIES//;/ }; do
+      echo "Unmounting /${x}..."
+      cd "/" && umount -f "${TMP_MOUNT}/${x}" || echo "[PROJECT LUNAR](ERROR) FAILED TO UNMOUNT /${x}"
+    done
+  fi
+}
+
+toggle_rootfs_data_mounts() {
+  if [ "${1}" != "0" ] && [ "${1}" != "1" ]; then
+    echo "[PROJECT LUNAR](ERROR) Bad usage of toggle_rootfs_data_mounts()" && return 1
+  fi
+  if [ "${1}" = "1" ]; then
+    echo "[PROJECT LUNAR](UNINSTALL) Not required for uninstall..."
+  else
+    echo "[PROJECT LUNAR](UNINSTALL) Unmounting rootfs_data..."
+    # RetroArch
+    if [ -f "${TMP_MOUNT}${PROJECTLUNAR_PATH}/opt/retroarch/retroarch" ]; then
+      TARGETDIR="${TMP_MOUNT}${PROJECTLUNAR_PATH}/opt/retroarch/config/retroarch"
+      echo "Unmounting ${TARGETDIR}..."
+      umount -f "${TARGETDIR}"
+    fi
+    # M2engage System
+    TARGETDIR="${TMP_MOUNT}/usr/game/system"
+    echo "Unmounting ${TARGETDIR}..."
+    umount -f "${TARGETDIR}"
+    # M2engage Region
+    TARGETDIR="${TMP_MOUNT}/usr/game/$(get_region)"
+    echo "Unmounting ${TARGETDIR}..."
+    umount -f "${TARGETDIR}"
+  fi
+}
+
+toggle_usb_mounts() {
+  if [ "${1}" != "0" ] && [ "${1}" != "1" ]; then
+    echo "[PROJECT LUNAR](ERROR) Bad usage of toggle_rootfs_data_mounts()" && return 1
+  fi
+  [ -z "$(mount | grep /media)" ] && echo "[PROJECT LUNAR](ERROR) USB is not mounted!" && return 1
+  if [ "${1}" = "1" ]; then
+    echo "[PROJECT LUNAR](UNINSTALL) Not required for uninstall..."
+  else
+    echo "[PROJECT LUNAR](UNINSTALL) Unmounting external media..."
+    # RetroArch
+    if [ -f "${TMP_MOUNT}${PROJECTLUNAR_PATH}/opt/retroarch/retroarch" ]; then
+      TARGETDIR="${TMP_MOUNT}${PROJECTLUNAR_PATH}/opt/retroarch/config/retroarch"
+      echo "Unmounting ${TARGETDIR}..."
+      umount -f "${TARGETDIR}"
+    fi
+    # M2engage System
+    TARGETDIR="${TMP_MOUNT}/usr/game/system"
+    echo "Unmounting ${TARGETDIR}..."
+    umount -f "${TARGETDIR}"
+    # M2engage Region
+    TARGETDIR="${TMP_MOUNT}/usr/game/$(get_region)"
+    echo "Unmounting ${TARGETDIR}..."
+    umount -f "${TARGETDIR}"
+    # Savestates
+    TARGETDIR="${TMP_MOUNT}/rootfs_data"
+    echo "Unmounting ${TARGETDIR}..."
+    umount -f "${TARGETDIR}"
+  fi
+}
+
+prepare_nandc() {
+  echo "[PROJECT LUNAR](INSTALL) Preparing kernel partition..."
+  umount "/tmp/mount/nandc"
+  sync
+  ${BACKUPFILES_PATH}${PROJECTLUNAR_PATH}/fsck.fat -y "/dev/nandc"
+  sync
+  mount "/dev/nandc" "/tmp/mount/nandc"
+  rm -rf "/tmp/mount/nandc/"*
+  df -h
+  sync
+}
+
+repair_nandc() {
+  echo "[PROJECT LUNAR](INSTALL) Repairing kernel partition..."
+  #gzip -c "/dev/nandc" > "/tmp/nandc_for_investigation.gz"
+  umount -f "/tmp/mount/nandc" &> "/dev/null"
+  ${BACKUPFILES_PATH}${PROJECTLUNAR_PATH}/busybox-pl mkfs.vfat -v "/dev/nandc"
+  umount -f "/tmp/mount/nandc" &> "/dev/null"
+  mount "/dev/nandc" "/tmp/mount/nandc"
+  sync
+}
+
+toggle_rw_root_fs() {
+  if [ "${1}" != "0" ] && [ "${1}" != "1" ]; then
+    echo "[PROJECT LUNAR](ERROR) Bad usage of toggle_rw_root_fs()" && return 1
+  fi
+  if [ "${1}" = "1" ]; then
+    mount -o remount,rw "/"
+  else
+    mount -o remount,ro "/"
+  fi
+}
+
+toggle_root_password() {
+  if [ "${1}" != "0" ] && [ "${1}" != "1" ]; then
+    echo "[PROJECT LUNAR](ERROR) Bad usage of toggle_root_password()" && return 1
+  fi
+  if [ "${1}" = "1" ] && [ -z $(grep root ${TMP_MOUNT}/etc/shadow | awk -F : '{ print $2 }') ]; then
+    [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "ro" ] && mount -o remount,rw "/" && RW_CHANGE=1
+    echo -e "5A7213\n5A7213" | passwd root
+    cp -f "/etc/passwd" "${TMP_MOUNT}/etc/"
+    cp -f "/etc/shadow" "${TMP_MOUNT}/etc/"
+    [ ! -z ${RW_CHANGE} ] && [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "rw" ] && mount -o remount,ro "/"
+    echo "[PROJECT LUNAR](INFO) Enabled stock ROOT Password... (5A7213)"
+  elif [ "${1}" = "0" ] && [ ! -z $(grep root ${TMP_MOUNT}/etc/shadow | awk -F : '{ print $2 }') ]; then
+    [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "ro" ] && mount -o remount,rw / && RW_CHANGE=1
+    passwd -d root
+    cp -f "/etc/passwd" "${TMP_MOUNT}/etc/"
+    cp -f "/etc/shadow" "${TMP_MOUNT}/etc/"
+    [ ! -z ${RW_CHANGE} ] && [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "rw" ] && mount -o remount,ro "/"
+    echo "[PROJECT LUNAR](INFO) Disabled ROOT Password..."
+  fi
+}
+
+toggle_hostname() {
+  if [ "${1}" != "0" ] && [ "${1}" != "1" ]; then
+    echo "[PROJECT LUNAR](ERROR) Bad usage of toggle_hostname()" && return 1
+  fi
+  if [ "${1}" = "1" ] && [ "$(cat ${TMP_MOUNT}/etc/hostname)" != "ProjectLunar" ]; then
+    [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "ro" ] && mount -o remount,rw "/" && RW_CHANGE=1
+    echo "ProjectLunar" > "${TMP_MOUNT}/etc/hostname"
+    [ ! -z ${RW_CHANGE} ] && [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "rw" ] && mount -o remount,ro "/"
+  elif [ "${1}" = "0" ] && [ "$(cat ${TMP_MOUNT}/etc/hostname)" != "VIVID" ]; then
+    [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "ro" ] && mount -o remount,rw / && RW_CHANGE=1
+    echo "VIVID" > "${TMP_MOUNT}/etc/hostname"
+    [ ! -z ${RW_CHANGE} ] && [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "rw" ] && mount -o remount,ro "/"
+    echo "[PROJECT LUNAR](INFO) Reverted Hostname..."
+  fi
+}
+
+toggle_nice_profile() {
+  if [ "${1}" != "0" ] && [ "${1}" != "1" ]; then
+    echo "[PROJECT LUNAR](ERROR) Bad usage of toggle_nice_profile()" && return 1
+  fi
+  if [ "${1}" = "1" ] && [ -z "$(grep Custom ${TMP_MOUNT}/etc/profile)" ]; then
+    echo "[PROJECT LUNAR](UNINSTALL) Not required for uninstall..."
+  elif [ "${1}" = "0" ] && [ ! -z "$(grep Custom /etc/profile)" ]; then
+    [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "ro" ] && mount -o remount,rw / && RW_CHANGE=1
+    cat "${TMP_MOUNT}${PROJECTLUNAR_PATH}/backup/profile-stock" > "${TMP_MOUNT}/etc/profile"
+    [ ! -z ${RW_CHANGE} ] && [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "rw" ] && mount -o remount,ro "/"
+    echo "[PROJECT LUNAR](INFO) Reverted profile..."
+  fi
+}
+
+check_for_kernel_backup() {
+  if [ ! -f "${TMP_MOUNT}${PROJECTLUNAR_PATH}/backup/$(cat ${TMP_MOUNT}/version)-kernel.tar.gz" ]; then
+    echo "[PROJECT LUNAR](FATAL ERROR) STOCK KERNEL BACKUP NOT FOUND at: ${TMP_MOUNT}${PROJECTLUNAR_PATH}/backup/$(cat ${TMP_MOUNT}/version)-kernel.tar.gz"
+    exit 1
+  else
+    echo "[PROJECT LUNAR](UNINSTALL) STOCK KERNEL BACKUP FOUND: ${TMP_MOUNT}${PROJECTLUNAR_PATH}/backup/$(cat ${TMP_MOUNT}/version)-kernel.tar.gz"
+  fi
+}
+
+get_region() {
+  region_code=$(cat ${TMP_MOUNT}/version | awk -F - '{ print $6 }' | tail -c 3)
+  [ "${region_code}" = "JP" ] && echo "030" && return 0
+  [ "${region_code}" = "US" ] && echo "031" && return 0
+  [ "${region_code}" = "EU" ] && echo "032" && return 0
+  [ "${region_code}" = "AS" ] && echo "033" && return 0
+}
+
+###############################################################################
+### Main
+
+main() {
+  if [ "${1}" != "1" ] && [ "${1}" != "2" ]; then
+    OVERRIDE=1
+  fi
+  if [ "${1}" = "1" ] || [ "${OVERRIDE}" = "1" ]; then
+    echo "==============================================================================="
+    echo "Starting Project Lunar uninstaller..."
+    echo "==============================================================================="
+    led_flash > "/dev/null" 2>&1 &
+    kill_ui_programs
+    echo "[PROJECT LUNAR](UNINSTALL) Displaying splash"
+    sdl_display "${TMP_MOUNT}${PROJECTLUNAR_PATH}/etc/project_lunar/IMG/splashscreen.png" &
+    echo "[PROJECT LUNAR](UNINSTALL) Execute check_for_kernel_backup()"
+    check_for_kernel_backup
+    echo "[PROJECT LUNAR](UNINSTALL) Execute toggle_usb_mounts()"
+    toggle_usb_mounts 0 &> "/dev/null"
+    echo "[PROJECT LUNAR](UNINSTALL) Execute toggle_rootfs_data_mounts()"
+    toggle_rootfs_data_mounts 0 &> "/dev/null"
+    [ -z "${OVERRIDE}" ] && sleep 9999 && /opt/uninstall 2
+  fi
+  ### Desktop App does some bits here but not a huge problem
+  ### If not done. It will still run like stock.
+  if [ "${1}" = "2" ] || [ "${OVERRIDE}" = "1" ]; then
+    echo "[PROJECT LUNAR](UNINSTALL) Execute toggle_overmount()"
+    toggle_overmount 0
+    echo "[PROJECT LUNAR](UNINSTALL) Clearing exploit data"
+    rm -f "${TMP_MOUNT}/rootfs_data/"*"99999"*
+    echo "[PROJECT LUNAR](UNINSTALL) Execute toggle_root_password()"
+    toggle_root_password 1
+    echo "[PROJECT LUNAR](UNINSTALL) Execute toggle_hostname()"
+    toggle_hostname 0
+    echo "[PROJECT LUNAR](UNINSTALL) Execute toggle_nice_profile()"
+    toggle_nice_profile 0
+    echo "[PROJECT LUNAR](UNINSTALL) Upacking local kernel backup"
+    [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "ro" ] && mount -o remount,rw "/" && RW_CHANGE=1
+    currentdir="$(pwd)"
+    mkdir "${BACKUPFILES_PATH}/kernel"
+    cp -fv "${TMP_MOUNT}${PROJECTLUNAR_PATH}/backup/$(cat ${TMP_MOUNT}/version)-kernel.tar.gz" "${BACKUPFILES_PATH}/kernel/"
+    cd "${BACKUPFILES_PATH}/kernel"
+    gunzip -d "$(cat ${TMP_MOUNT}/version)-kernel.tar.gz"
+    tar -xvf "$(cat ${TMP_MOUNT}/version)-kernel.tar"
+    cd ${currentdir}
+    echo "[PROJECT LUNAR](UNINSTALL) Flashing Project Lunar kernel"
+    rm -f "${TMP_MOUNT}/lib/modules/3.4.113/extra/mali.ko"
+    cp -fav "${BACKUPFILES_PATH}/kernel/mali.ko" "${TMP_MOUNT}/lib/modules/3.4.113/extra/"
+    prepare_nandc
+    AVAILABLE="$(($(df -P /dev/nandc | tail -1 | awk '{ print $4 }') * 1000))"
+    KERNELSIZE="$(ls -l /tmp/kernel/uImage | awk '{ print $5 }')"
+    if [ ! "${KERNELSIZE}" -lt "${AVAILABLE}" ]; then
+      repair_nandc
+    fi
+    cp -fav "${BACKUPFILES_PATH}/kernel/uImage" "/tmp/mount/nandc/"
+    sync
+    sleep 0.5 #Lets be safe...
+    umount "/tmp/mount/nandc" && rm -rf "/tmp/mount/nandc"
+    [ ! -z ${RW_CHANGE} ] && [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "rw" ] && mount -o remount,ro "/"
+    echo "[PROJECT LUNAR](UNINSTALL) Execute revert_nandg()"
+    cd "/"
+    revert_nandg
+    kill_ui_programs
+    sync
+    sleep 0.5 #Lets be safe...
+    echo "==============================================================================="
+    echo "Project Lunar uninstalled successfully!"
+    echo "==============================================================================="
+  fi
+  reboot
+}
+
+###############################################################################
+### Execute
+
+main "$@"

@@ -1,0 +1,40 @@
+#!/bin/sh
+#
+#  Copyright 2019 ModMyClassic (https://modmyclassic.com/license)
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+source /opt/project_lunar/etc/project_lunar/FUNC/project_lunar_func_lib
+
+kill_ui_programs
+
+local AUTOBOOT="--auto-boot"
+[ -f "/tmp/.bm_booted.flag" ] && AUTOBOOT="" || touch "/tmp/.bm_booted.flag"
+
+boot_menu --image-folder "/opt/project_lunar/etc/project_lunar/IMG" \
+          --music-folder "/opt/project_lunar/etc/project_lunar/SND" \
+          --theme-folder "/opt/project_lunar/etc/project_lunar/THEME/stock/menu_files" \
+          --default-cfg-file "/opt/project_lunar/etc/project_lunar/CFG/project_lunar_DEFAULT.INI" \
+          --cfg-file "/opt/project_lunar/etc/project_lunar/CFG/project_lunar.INI" \
+          --ui-themes-folder "/opt/project_lunar/etc/project_lunar/THEME" \
+          --language-file "/opt/project_lunar/etc/boot_menu/languages/ENG.json" \
+          --boot-menu-folder "/opt/project_lunar/etc/boot_menu/" \
+          "${AUTOBOOT}" >> /tmp/project_lunar.log
+
+# Sync datetime if possible
+rdate -s time.nist.gov > "/dev/null" 2>&1 &
+
+execute="$(cat /tmp/launchfilecommand)"
+rm -rf "/tmp/launchfilecommand"
+${execute} >> /tmp/project_lunar.log

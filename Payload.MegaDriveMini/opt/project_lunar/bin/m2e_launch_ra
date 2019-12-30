@@ -1,0 +1,72 @@
+#!/bin/sh
+#
+#  Copyright 2019 ModMyClassic (https://modmyclassic.com/license)
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+RADIR="/opt/project_lunar/opt/retroarch"
+CORE="${RADIR}/config/retroarch/cores/${1}"
+GAME="${2}"
+shift
+shift
+
+source "/tmp/project_lunar.cfg"
+
+echo "==============================================================================="
+echo "[PROJECT LUNAR](M2ENGAGE) RetroArch Launcher"
+echo "CORE: $CORE"
+echo "ROM: $GAME"
+echo "ARGS: $@"
+echo "==============================================================================="
+
+if [ -f "${RADIR}/retroarch" ]; then
+  stop_m2engage &> "/dev/null"
+
+  chmod +x "/opt/project_lunar/opt/retroarch/retroarch"
+  mkdir -p "/tmp/ra_cache"
+
+  rm -f "/tmp/retroarch.log"
+  
+  cp "${RADIR}/config/retroarch/retroarch.cfg" "/tmp/retroarch.cfg"
+  if [ "${toggle_kiosk}" = "1" ]; then
+    sed -i -e 's/kiosk_mode_enable = "[^"]*"/kiosk_mode_enable = "true"/g' "/tmp/retroarch.cfg"
+    sed -i -e 's/kiosk_mode_password = "[^"]*"/kiosk_mode_password = "bananarama"/g' "/tmp/retroarch.cfg"
+  fi
+  
+  HOME="${RADIR}" PATH="${PATH}:${RADIR}" "${RADIR}/retroarch" -c "/tmp/retroarch.cfg" -L "${CORE}" "$@" "${GAME}" > "/tmp/retroarch.log" 2>&1 &
+  RAPID=$!
+
+  # Set Watchdog Arguments
+  WATCHDOG_ARGS="$RAPID"
+
+  retroarch_watchdog "${WATCHDOG_ARGS}"
+
+  INSTRUCTION=$?
+  echo "exit instruction is: ${INSTRUCTION}"
+  if [ "${INSTRUCTION}" = "2" ]; then
+    echo "shutdown triggered"
+    shutdown-detection 1
+  elif [ "${INSTRUCTION}" != "0" ]; then
+    echo "error!"
+    stop_retroarch
+  fi
+
+  rm -rf "/tmp/ra_cache"
+  rm -rf "/tmp/retroarch.cfg"
+
+else
+  echo "[PROJECT LUNAR](ERROR) RetroArch is not installed!"
+fi
+
+start_m2engage

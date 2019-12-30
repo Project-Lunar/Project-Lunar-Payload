@@ -1,0 +1,27 @@
+#!/bin/sh
+#
+#  Copyright 2019 ModMyClassic (https://modmyclassic.com/license)
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+TARGET=$@
+
+if [ ! -z "$(busybox-pl dpkg-deb -f ${TARGET} | grep USB_MOD)" ]; then
+  [ -z "$(mount | grep /media)" ] && echo "[PROJECT LUNAR](ERROR) USB is not mounted and it's a USB mod!" && return 1
+fi
+
+kill_ui_programs && killall start_retroarch start_emustation start_bootmenu start_m2engage aplay es_bg_music &> "/dev/null"
+project_lunar sdl_text "Installing $(basename ${TARGET})..."
+busybox-pl dpkg -i --force-confnew "${TARGET}"
+killall "sdl_display"

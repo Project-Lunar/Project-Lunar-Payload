@@ -1,0 +1,113 @@
+#!/bin/sh
+#
+#  Copyright 2019 ModMyClassic (https://modmyclassic.com/license)
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+###############################################################################
+# Project Lunar - Primary Mod Initiator
+# ModMyClassic.com / https://discordapp.com/invite/8gygsrw
+###############################################################################
+
+###############################################################################
+### Local Variables
+
+PROJECTLUNAR_PATH="/opt/project_lunar"
+
+###############################################################################
+### Source config, initialise and load function library
+
+# Load in Project Lunar function library
+source "/etc/project_lunar/FUNC/project_lunar_func_lib"
+
+# Load in Project Lunar user configuration
+pre_init_config
+parse_config
+source "/tmp/project_lunar.cfg"
+
+###############################################################################
+### Service
+
+start() {
+  echo "==============================================================================="
+  echo "Starting Project Lunar..."
+  echo "==============================================================================="
+  echo "[PROJECT LUNAR](INFO) Initialising framebuffer..."
+  clear_fb 
+  toggle_splash ${toggle_splash}
+  echo "[PROJECT LUNAR](INFO) Execute initialise_rootfs_data()"
+  initialise_rootfs_data
+  echo "[PROJECT LUNAR](INFO) Execute initialise_update_directories()"
+  initialise_update_directories
+  echo "[PROJECT LUNAR](INFO) Execute initialise_rootfs_data_mounts()"
+  toggle_rootfs_data_mounts 1 
+  echo "[PROJECT LUNAR](INFO) Execute process_nand_updates()"
+  process_nand_updates
+  echo "[PROJECT LUNAR](INFO) Setting NAND initialised flag"
+  touch "/tmp/.nand_initialised"
+  echo "[PROJECT LUNAR](INFO) Execute load_kernel_modules()"
+  load_kernel_modules
+  echo "[PROJECT LUNAR](INFO) Execute toggle_rdnis_service()"
+  toggle_rdnis_service ${toggle_RDNIS}
+  echo "[PROJECT LUNAR](INFO) Execute thermal watchdog"
+  thermal_watchdog &
+  echo "[PROJECT LUNAR](INFO) Execute error watchdog"
+  error_watchdog &
+  echo "[PROJECT LUNAR](INFO) Execute toggle_blast_processing()"
+  toggle_blast_processing ${toggle_blast_processing}
+  echo "[PROJECT LUNAR](INFO) Execute toggle_overcommit_memory()"
+  toggle_overcommit_memory ${toggle_overcommit_memory}
+  echo "[PROJECT LUNAR](INFO) Execute toggle_memory_optimisation()"
+  toggle_memory_optimisation ${toggle_memory_optimisation}
+  echo "[PROJECT LUNAR](INFO)(BACKGROUND) Execute toggle_external_swap() in 10 sec"
+  toggle_external_swap ${toggle_external_swap} &
+  echo "[PROJECT LUNAR](INFO) Execute toggle_rw_root_fs()"
+  toggle_rw_root_fs ${toggle_rw_root_fs}
+  echo "[PROJECT LUNAR](INFO) Execute toggle_root_password()"
+  toggle_root_password ${toggle_root_password}
+  echo "[PROJECT LUNAR](INFO) Execute toggle_nice_profile()"
+  toggle_nice_profile 1
+  echo "[PROJECT LUNAR](INFO) Execute toggle_hostname()"
+  toggle_hostname 1
+  echo "==============================================================================="
+  echo "Project Lunar started OK!"
+  echo "==============================================================================="
+  kill_ui_programs
+}
+
+stop() {
+  echo "==============================================================================="
+  echo "Stopping Project Lunar..."
+  echo "==============================================================================="
+  # Don't really have anything requiring a graceful shutdown right now...
+  echo "OK"
+}
+
+case "$1" in
+  start)
+    start >> /tmp/project_lunar.log
+    ;;
+  stop)
+    stop
+    ;;
+  restart|reload)
+    stop
+    start
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|restart}"
+    exit 1
+esac
+
+exit $?

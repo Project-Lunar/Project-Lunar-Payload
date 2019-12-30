@@ -1,0 +1,103 @@
+#!/bin/sh
+#
+#  Copyright 2019 ModMyClassic (https://modmyclassic.com/license)
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+###############################################################################
+# Project Lunar - Network Service
+# ModMyClassic.com / https://discordapp.com/invite/8gygsrw
+###############################################################################
+
+###############################################################################
+### Local Variables
+
+INTERFACES="/etc/network/interfaces.d"
+if [ -f "/opt/project_lunar/pl_id" ]; then
+  CONSOLE_ID="$(hexdump /opt/project_lunar/pl_id | head -n1 | cut -c9-28 | tr -d ' ')"
+else
+  CONSOLE_ID="$(hexdump /opt/project_lunar/etc/random-seed | head -n1 | cut -c9-28 | tr -d ' ')"
+fi
+###############################################################################
+### Source config, initialise and load function library
+
+# Load in Project Lunar function library
+source "/etc/project_lunar/FUNC/project_lunar_func_lib"
+
+###############################################################################
+### Service
+
+start(){
+  echo "==============================================================================="
+  echo "Starting Project Lunar networking service..."
+  echo "==============================================================================="
+  ifup -a 2> "/dev/null"
+  for i in "${INTERFACES}/"*; do
+    INTERFACE="$(basename ${i})"
+    if [ ! -z "$(ifconfig -a | grep ${INTERFACE})" ]; then
+      echo "[PROJECT LUNAR](NETWORK) Starting Network interface: ${INTERFACE}"
+      if [ "${INTERFACE}" = "wlan0" ]; then
+        [ ! -f "/etc/wpa_supplicant/wpa_supplicant.conf" ] && cp "/etc/wpa_supplicant/wpa_supplicant_DEFAULT.conf" "/etc/wpa_supplicant/wpa_supplicant.conf"
+        wpa_supplicant -B -Dnl80211 -iwlan0 -C/var/run/wpa_supplicant -c "/opt/project_lunar/etc/wpa_supplicant/wpa_supplicant.conf"
+        if [ ! -z "$(grep ssid= /etc/wpa_supplicant/wpa_supplicant.conf)" ] && [ -z "$(ps wax | grep dhcp | grep wlan0)" ]; then
+          #If we have a SSID assigned lets try and connect to it
+          udhcpc -R -x hostname:"ProjectLunar-${CONSOLE_ID}" -t 10 -n -p /var/run/udhcpc.wlan0.pid -i wlan0 &
+        fi
+      fi
+      if [ "${INTERFACE}" = "eth0" ] && [ -z "$(ps wax | grep dhcp | grep eth0)" ]; then
+        udhcpc -R -x hostname:"ProjectLunar-${CONSOLE_ID}" -t 10 -n -p /var/run/udhcpc.eth0.pid -i eth0 &
+      fi
+    fi 
+  done
+  # Configure board's clock to somewhat sensible datetime if connected to net.
+  rdate -s time.nist.gov > "/dev/null" 2>&1 &
+}
+
+stop(){
+  echo "==============================================================================="
+  echo "Stopping Project Lunar networking service..."
+  echo "==============================================================================="
+  killall -s TERM udhcpc wpa_supplicant &> "/dev/null"
+  for i in "${INTERFACES}/"*; do
+    INTERFACE="$(basename ${i})"
+    ifdown "${INTERFACE}" -i "${INTERFACES}/${INTERFACE}" 2> "/dev/null"
+    ip link set "${INTERFACE}" down 2> "/dev/null"
+  done
+  # Clean up any other interface
+  ifdown -a
+  ip link set lo down 2> "/dev/null"
+  echo "OK"
+}
+
+restart(){
+  stop
+  start &
+}
+
+case "$1" in
+  start)
+    start >> /tmp/project_lunar.log 2>&1 &
+  ;;
+  stop)
+    stop
+  ;;
+  restart|reload)
+    restart
+  ;;
+  *)
+    echo "Usage: $0 {start|stop|restart}"
+    exit 1
+esac
+
+exit $?

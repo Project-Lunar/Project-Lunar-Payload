@@ -1,0 +1,76 @@
+#!/bin/sh
+#
+#  Copyright 2019 ModMyClassic (https://modmyclassic.com/license)
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+#Bash Colours
+RESTORE=$(echo -en '\033[0m')
+RED=$(echo -en '\033[00;31m')
+GREEN=$(echo -en '\033[00;32m')
+YELLOW=$(echo -en '\033[00;33m')
+MAGENTA=$(echo -en '\033[00;35m')
+CYAN=$(echo -en '\033[00;36m')
+LBLUE=$(echo -en '\033[01;34m')
+
+#Set Variables
+v_user="$USER"
+v_hostname="$HOSTNAME"
+v_os="$(cat /version | cut -c 11-)"
+v_kernel="Project Lunar $(uname -s -m)"
+v_release="$(uname -r)"
+v_date="$(uname -v | cut -c 20-)"
+v_cpu="$(cat /proc/cpuinfo | grep Processor | head -n1 | awk '{$1=$2="";print}' | cut -c 3-)"
+v_ram_usage="$(free -m  | grep Mem | awk '{print $3}') / $(free -m  | grep Mem | awk '{print $2}')mb"
+v_cpu_usage="$(top -b -n 1 | grep CPU | awk '{ print $2; }' | head -n1)"
+v_cpu_temp="$(cat /sys/devices/virtual/thermal/thermal_zone0/temp)c"
+v_cpu_speed="$(cat /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_cur_freq)KHz"
+v_root_usage="$(df -m / | awk '{ print $4; }' | tail -n1) / $(df -m / | awk '{ print $2; }' | tail -n1)mb //${MAGENTA} $(df -m / | awk '{ print $5; }' | tail -n1) Used"
+v_data_usage="$(df -m /rootfs_data | awk '{ print $3; }' | tail -n1) / $(df -m /rootfs_data | awk '{ print $1; }' | tail -n1)mb //${MAGENTA} $(df -m /rootfs_data | awk '{ print $4; }' | tail -n1) Used"
+v_extra_usage="$(df -m /opt/project_lunar | awk '{ print $4; }' | tail -n1) / $(df -m /opt/project_lunar | awk '{ print $2; }' | tail -n1)mb //${MAGENTA} $(df -m /opt/project_lunar | awk '{ print $5; }' | tail -n1) Used"
+if [ "$(ls -A /media)" ]; then
+	v_media_usage="$(df -m /media | awk '{ print $4; }' | tail -n1) / $(df -m /media | awk '{ print $2; }' | tail -n1)mb //${MAGENTA} $(df -m /media | awk '{ print $5; }' | tail -n1) Used"
+fi
+
+export PATH=$PATH:/media/bleemsync/bin
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/media/bleemsync/lib
+export TERM=xterm-256color
+export TERMINFO=/etc/terminfo
+
+clear
+echo "▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄"
+echo "█${LBLUE}                                     ${RESTORE}█ ${GREEN}User:${RESTORE} $v_user"
+echo "█${LBLUE}                                     ${RESTORE}█ ${GREEN}Hostname:${RESTORE} $v_hostname"
+echo "█${LBLUE} ___ ____ ____  _ ____ ____ ___      ${RESTORE}█ ${GREEN}OS:${RESTORE} $v_os"
+echo "█${LBLUE} |__] |__/ | |  | |___ |    |        ${RESTORE}█ ${GREEN}Kernel:${RESTORE} $v_kernel"
+echo "█${LBLUE} |    | \  |_| _| |___ |___ |        ${RESTORE}█ ${GREEN}Kernel Release:${RESTORE} $v_release"
+echo "█${LBLUE} 88    88   88 8888b. 8888b. 8888ba  ${RESTORE}█ ${GREEN}Kernel Date:${RESTORE} $v_date"
+echo "█${LBLUE} 88    88   88 88 \`8b 88 \`8b 88 \`8b  ${RESTORE}█ ${GREEN}CPU:${RESTORE} $v_cpu"
+echo "█${LBLUE} 88    88   88 88  88 88aa88 88aa8P’ ${RESTORE}█ ${GREEN}RAM Usage:${RESTORE} $v_ram_usage"
+echo "█${LBLUE} 88    Y8...8P 88  88 88  88 88 \`8b. ${RESTORE}█ ${GREEN}CPU Usage:${RESTORE} $v_cpu_usage"
+echo "█${LBLUE} 888888\`Y888P’ 88  88 88  88 88   88 ${RESTORE}█ ${GREEN}CPU temp:${RESTORE} $v_cpu_temp"
+echo "█${LBLUE}                                     ${RESTORE}█ ${GREEN}CPU Speed:${RESTORE} $v_cpu_speed"
+echo "█${LBLUE}                                     ${RESTORE}█ ${GREEN}ROOT:${RESTORE}  $v_root_usage ${RESTORE}"
+echo "█▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█ ${GREEN}DATA:${RESTORE}  $v_data_usage ${RESTORE}"
+echo "█${CYAN}       Created by ModMyClassic       ${RESTORE}█ ${GREEN}EXTRA:${RESTORE} $v_extra_usage ${RESTORE}"
+if [ "$(ls -A /media)" ]; then
+	echo "█${CYAN}          modmyclassic.com           ${RESTORE}█ ${GREEN}MEDIA:${RESTORE} $v_media_usage ${RESTORE}"
+else
+	echo "█${CYAN}          modmyclassic.com           ${RESTORE}█ ${GREEN}MEDIA:${RESTORE} ${MAGENTA}No External Storage${RESTORE}"
+fi
+echo "█▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄█"
+echo
+echo "If you have any issues please vist our support discord:"
+echo "${CYAN}https://discordapp.com/invite/8gygsrw${RESTORE}"
+echo

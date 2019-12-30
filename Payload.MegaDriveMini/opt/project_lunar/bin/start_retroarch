@@ -1,0 +1,52 @@
+#!/bin/sh
+#
+#  Copyright 2019 ModMyClassic (https://modmyclassic.com/license)
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+LAUNCH_LOC="${1}"
+
+if [ -f "/opt/project_lunar/opt/retroarch/retroarch" ]; then
+  export HOME="/opt/project_lunar/opt/retroarch"
+  chmod +x "/opt/project_lunar/opt/retroarch/retroarch"
+
+  rm -f "/tmp/retroarch.log"
+
+  "/opt/project_lunar/opt/retroarch/retroarch" -c "/opt/project_lunar/opt/retroarch/config/retroarch/retroarch.cfg" > "/tmp/retroarch.log" 2>&1 &
+  RAPID=$!
+
+  # Set Watchdog Arguments
+  WATCHDOG_ARGS="$RAPID"
+
+  retroarch_watchdog "${WATCHDOG_ARGS}"
+
+  INSTRUCTION=$?
+  echo "exit instruction is: ${INSTRUCTION}"
+  if [ "${INSTRUCTION}" = "2" ]; then
+    echo "shutdown triggered"
+    shutdown-detection 1
+  elif [ "${INSTRUCTION}" != "0" ]; then
+    echo "error!"
+    stop_retroarch
+  fi
+
+else
+  echo "[PROJECT LUNAR](ERROR) RetroArch is not installed!" && exit 1
+fi
+
+if [ "${LAUNCH_LOC}" = "from_m2engage" ]; then
+  start_m2engage >> /tmp/project_lunar.log
+else
+  start_bootmenu &
+fi

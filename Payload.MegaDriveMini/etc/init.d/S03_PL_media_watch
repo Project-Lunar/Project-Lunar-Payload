@@ -1,0 +1,106 @@
+#!/bin/sh
+#
+#  Copyright 2019 ModMyClassic (https://modmyclassic.com/license)
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+###############################################################################
+# Project Lunar - Media watchdog
+# ModMyClassic.com / https://discordapp.com/invite/8gygsrw
+###############################################################################
+
+###############################################################################
+### Local Variables
+
+PROJECTLUNAR_PATH="/opt/project_lunar"
+WAITTIMEOUT=2
+
+###############################################################################
+### Source config, initialise and load function library
+
+# Load in Project Lunar function library
+source "/etc/project_lunar/FUNC/project_lunar_func_lib"
+
+###############################################################################
+### Service
+
+start() {
+  echo "==============================================================================="
+  echo "Initialising Project Lunar media watchdog..."
+  echo "==============================================================================="
+  touch /tmp/.media_heartbeat || exit 1
+  HBMODIFIED=$(date --utc --reference=/tmp/.media_heartbeat +%s)
+  TARGETTIME=$((HBMODIFIED + WAITTIMEOUT))
+  echo "[PROJECT LUNAR](INFO) Media heartbeat created" 
+  echo "==============================================================================="
+  echo "Initialised Project Lunar media watchdog OK!"
+  echo "==============================================================================="
+
+  while true; do
+    HBMODIFIED=$(date --utc --reference=/tmp/.media_heartbeat +%s)
+    if [ ${HBMODIFIED} -ge ${TARGETTIME} ] && [ -z "$(mount | grep /media)" ]; then
+      for x in $(fdisk -l | grep sd.* | grep -v Disk | head -n1 | awk '{print $1}'); do
+        [ ! -f "/tmp/.nand_initialised" ] && break
+        echo "[PROJECT LUNAR](MEDIA WATCHDOG) Mounting ${x} to /media/"
+        mount_media ${x}
+        sleep 0.5
+        initialise_usb
+        initialise_usb_update_directories
+        if [ -f "/rootfs_data/project_lunar/m2engage/system/script/play_standalone.nut.m" ]; then
+          cp -fr "/rootfs_data/project_lunar/m2engage/system/script/play_standalone.nut.m" "/media/project_lunar/m2engage/system/script/"
+        fi
+        process_usb_updates
+        sync_saves_from_nand
+        [ -f "/tmp/project_lunar.cfg" ] && source "/tmp/project_lunar.cfg"
+        [ ! -z "$(ps wax | grep -v grep | grep -i m2engage | head -n 1)" ] && REFRESH_M2ENGAGE=1
+        [ ! -z "${REFRESH_M2ENGAGE}" ] && stop_m2engage
+        toggle_usb_mounts 1
+        [ ! -z "${REFRESH_M2ENGAGE}" ] && start_m2engage
+      done
+      TARGETTIME=$((HBMODIFIED + WAITTIMEOUT))
+    else
+      touch /tmp/.media_heartbeat
+      sleep ${WAITTIMEOUT}
+    fi
+  done
+
+}
+
+stop() {
+  echo "==============================================================================="
+  echo "Stopping Project Lunar media watchdog..."
+  echo "==============================================================================="
+  toggle_usb_mounts 0 &> "/dev/null"
+  swapoff /media/swap/256MB.swap &> "/dev/null"
+  umount -f "/media"
+  echo "OK"
+}
+
+case "$1" in
+  start)
+    start >> /tmp/project_lunar.log 2>&1 &
+    ;;
+  stop)
+    stop
+    ;;
+  restart|reload)
+    stop
+    start
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|restart}"
+    exit 1
+esac
+
+exit $?

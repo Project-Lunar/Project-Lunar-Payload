@@ -1,0 +1,46 @@
+#!/bin/sh
+#
+#  Copyright 2019 ModMyClassic (https://modmyclassic.com/license)
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+#This is the trigger point in c
+TRIGGERPOINT=75
+
+while true; do
+  TEMP=$(cat /sys/devices/virtual/thermal/thermal_zone0/temp)
+  if [ "${TEMP}" -ge "${TRIGGERPOINT}" ]; then
+    echo "[PROJECT LUNAR](WARNING)SOC TEMP EXCEEDED SAFE LIMIT! Throttling back to stock speeds.." >> "/tmp/project_lunar.log"
+    touch "/opt/project_lunar/pl_throttled"
+    project_lunar toggle_blast_processing 0 >> "/tmp/project_lunar.log"
+    break
+  fi
+  sleep 5
+done
+# Only triggers after a throttle event
+# If console exceeds safe limit on stock clock... shut it down.
+sleep 60
+while true; do
+TEMP=$(cat /sys/devices/virtual/thermal/thermal_zone0/temp)
+  if [ "${TEMP}" -ge "${TRIGGERPOINT}" ]; then
+    kill_ui_programs
+    sleep 1
+    kill_ui_programs # For good measure...
+    shutdown-detection 2
+    break
+  fi
+  sleep 5
+done
+
+

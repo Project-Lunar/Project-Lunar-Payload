@@ -1,0 +1,5 @@
+{
+  "texture":"ES.png",
+  "hoverTexture":"ES_Hover.png",
+  "launchCommand":"start_emustation"
+}

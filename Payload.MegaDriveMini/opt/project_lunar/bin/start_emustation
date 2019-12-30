@@ -1,0 +1,103 @@
+#!/bin/sh
+#
+#  Copyright 2019 ModMyClassic (https://modmyclassic.com/license)
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+create_ES_rom_dirs(){
+  ROM_PATH="$1"
+  [ ! -f "${ROM_PATH}/a2600" ] && mkdir -p "${ROM_PATH}/a2600"
+  [ ! -f "${ROM_PATH}/Intellivision" ] && mkdir -p "${ROM_PATH}/Intellivision"
+  [ ! -f "${ROM_PATH}/Colecovision" ] && mkdir -p "${ROM_PATH}/Colecovision"
+  [ ! -f "${ROM_PATH}/a5200" ] && mkdir -p "${ROM_PATH}/a5200"
+  [ ! -f "${ROM_PATH}/nes" ] && mkdir -p "${ROM_PATH}/nes"
+  [ ! -f "${ROM_PATH}/sg1000" ] && mkdir -p "${ROM_PATH}/sg1000"
+  [ ! -f "${ROM_PATH}/mastersystem" ] && mkdir -p "${ROM_PATH}/mastersystem"
+  [ ! -f "${ROM_PATH}/a7800" ] && mkdir -p "${ROM_PATH}/a7800"
+  [ ! -f "${ROM_PATH}/tg16" ] && mkdir -p "${ROM_PATH}/tg16"
+  [ ! -f "${ROM_PATH}/genesis" ] && mkdir -p "${ROM_PATH}/genesis"
+  [ ! -f "${ROM_PATH}/tg-cd" ] && mkdir -p "${ROM_PATH}/tg-cd"
+  [ ! -f "${ROM_PATH}/gb" ] && mkdir -p "${ROM_PATH}/gb"
+  [ ! -f "${ROM_PATH}/AtariLynx" ] && mkdir -p "${ROM_PATH}/AtariLynx"
+  [ ! -f "${ROM_PATH}/NeoGeo" ] && mkdir -p "${ROM_PATH}/NeoGeo"
+  [ ! -f "${ROM_PATH}/snes" ] && mkdir -p "${ROM_PATH}/snes"
+  [ ! -f "${ROM_PATH}/gamegear" ] && mkdir -p "${ROM_PATH}/gamegear"
+  [ ! -f "${ROM_PATH}/segacd" ] && mkdir -p "${ROM_PATH}/segacd"
+  [ ! -f "${ROM_PATH}/3do" ] && mkdir -p "${ROM_PATH}/3do"
+  [ ! -f "${ROM_PATH}/AtariJaguar" ] && mkdir -p "${ROM_PATH}/AtariJaguar"
+  [ ! -f "${ROM_PATH}/Sega32X" ] && mkdir -p "${ROM_PATH}/Sega32X"
+  [ ! -f "${ROM_PATH}/Saturn" ] && mkdir -p "${ROM_PATH}/Saturn"
+  [ ! -f "${ROM_PATH}/psx" ] && mkdir -p "${ROM_PATH}/psx"
+  [ ! -f "${ROM_PATH}/virtualboy" ] && mkdir -p "${ROM_PATH}/virtualboy"
+  [ ! -f "${ROM_PATH}/N64" ] && mkdir -p "${ROM_PATH}/N64"
+  [ ! -f "${ROM_PATH}/gbc" ] && mkdir -p "${ROM_PATH}/gbc"
+  [ ! -f "${ROM_PATH}/Dreamcast" ] && mkdir -p "${ROM_PATH}/Dreamcast"
+  [ ! -f "${ROM_PATH}/ngp" ] && mkdir -p "${ROM_PATH}/ngp"
+  [ ! -f "${ROM_PATH}/wonderswan" ] && mkdir -p "${ROM_PATH}/wonderswan"
+  [ ! -f "${ROM_PATH}/gba" ] && mkdir -p "${ROM_PATH}/gba"
+  [ ! -f "${ROM_PATH}/nds" ] && mkdir -p "${ROM_PATH}/nds"
+  [ ! -f "${ROM_PATH}/PSP" ] && mkdir -p "${ROM_PATH}/PSP"
+  [ ! -f "${ROM_PATH}/mame" ] && mkdir -p "${ROM_PATH}/fba"
+  [ ! -f "${ROM_PATH}/fba" ] && mkdir -p "${ROM_PATH}/fba"
+  [ ! -f "${ROM_PATH}/daphne" ] && mkdir -p "${ROM_PATH}/daphne"
+  [ ! -f "${ROM_PATH}/atari800" ] && mkdir -p "${ROM_PATH}/atari800"
+  [ ! -f "${ROM_PATH}/zxspectrum" ] && mkdir -p "${ROM_PATH}/zxspectrum"
+  [ ! -f "${ROM_PATH}/c64" ] && mkdir -p "${ROM_PATH}/msx"
+  [ ! -f "${ROM_PATH}/msx" ] && mkdir -p "${ROM_PATH}/msx"
+  [ ! -f "${ROM_PATH}/amstradcpc" ] && mkdir -p "${ROM_PATH}/amstradcpc"
+  [ ! -f "${ROM_PATH}/atarist" ] && mkdir -p "${ROM_PATH}/atarist"
+  [ ! -f "${ROM_PATH}/amiga" ] && mkdir -p "${ROM_PATH}/amiga"
+}
+
+if [ -f "/media/project_lunar/emustation/emulationstation" ]; then
+  create_ES_rom_dirs "/media/project_lunar/roms"
+  chmod +x "/media/project_lunar/emustation/emulationstation"
+  rm -f "/tmp/emulation_station.log"
+  cd "/media/project_lunar/emustation"
+
+  # Start BG Music Player
+  /media/project_lunar/emustation/es_bg_music &
+
+  PATH="${PATH}:/media/project_lunar/emustation" HOME="/media/project_lunar/emustation" ./emulationstation  > "/tmp/emulation_station.log" 2>&1 &
+  RAPID=$!
+
+  # Clear FB
+  clear_fb
+
+  # Set Watchdog Arguments
+  WATCHDOG_ARGS="$RAPID"
+
+  retroarch_watchdog "${WATCHDOG_ARGS}"
+else
+  echo "[PROJECT LUNAR](ERROR) Emulation Station is not installed!" 
+  clear_fb
+  project_lunar sdl_text "ERROR: Emustation not installed! Opening Boot menu in 5 secs..."
+  sleep 5
+  killall "sdl_display"
+fi
+
+INSTRUCTION=$?
+
+killall aplay es_bg_music
+
+echo "exit instruction is: ${INSTRUCTION}"
+if [ "${INSTRUCTION}" = "2" ]; then
+  echo "shutdown triggered"
+  shutdown-detection 1
+elif [ "${INSTRUCTION}" != "0" ]; then
+  echo "error!"
+  stop_emustation
+fi
+
+start_bootmenu &

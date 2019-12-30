@@ -1,0 +1,6 @@
+wireless/lib80211.ko
+wireless/cfg80211.ko
+mac80211/mac80211.ko
+eeprom/eeprom_93cx6.ko
+rtl8188eu/8188eu.ko
+rtl8187/rtl8187.ko

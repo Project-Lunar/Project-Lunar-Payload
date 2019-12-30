@@ -1,0 +1,98 @@
+#!/bin/sh
+#
+# Starts game app.
+#
+
+PROC=m2engage
+GAME_HOME=/usr/game
+RNNING_HOME=/root
+EXIT_FILE=/tmp/.game.exit
+LOG_FILE=/tmp/.game.log
+
+StartGame() {
+  rm -rf ${EXIT_FILE}
+  if [ -x /etc/init.d/moon-game ];then
+    echo start game.
+  fi
+  if [ -f ${EXIT_FILE} ];then
+    break;
+  fi
+  echo "start game app" >> ${LOG_FILE}
+  ulimit -s 1024
+  if [ -z "$(mount | grep /media)" ]; then
+    pl_watchdog &
+  else
+    pl_watchdog --using-usb &
+  fi
+  fake_controller /opt/project_lunar/etc/boot_menu/gamecontrollerdb.txt &
+  cd ${GAME_HOME} && ./${PROC} >> ${LOG_FILE} 2>&1
+  /usr/bin/shutdown-detection $?
+  echo "exit game app $?" >> ${LOG_FILE}
+}
+
+ResumeGame() {
+  rm -rf ${EXIT_FILE}
+  echo "resume game app" >> ${LOG_FILE}
+  pl_watchdog &
+  fake_controller /opt/project_lunar/etc/boot_menu/gamecontrollerdb.txt &
+  killall -9 shutdown-detection &> "/dev/null"
+  cd ${GAME_HOME} && killall -CONT ${PROC} >> ${LOG_FILE} 2>&1
+  /usr/bin/shutdown-detection $?
+  echo "exit game app $?" >> ${LOG_FILE}
+}
+
+start() {
+  StartGame &
+}
+
+stop() {
+  echo "stop game app" >> ${LOG_FILE}
+  touch ${EXIT_FILE}
+  killall -s TERM pl_watchdog
+  killall -s TERM fake_controller
+  killall -9 ${PROC}
+  killall -9 shutdown-detection &> "/dev/null"
+}
+
+pause() {
+  echo "pause game app" >> ${LOG_FILE}
+  killall -s TERM pl_watchdog
+  killall -s TERM fake_controller
+  killall -STOP ${PROC}
+  killall -9 shutdown-detection &> "/dev/null"
+  # Can't work out if this is a good idea or not but as M2engage is so
+  # DRAM hungry, I don't think this is a bad idea...
+  sync; echo 3 > /proc/sys/vm/drop_caches
+}
+
+resume() {
+  ResumeGame &
+}
+
+restart() {
+  stop
+  start
+}
+
+case "$1" in
+  start)
+    start
+    ;;
+  stop)
+    stop
+    ;;
+  pause)
+    pause
+    ;;
+  resume)
+    resume
+    ;;
+  restart|reload)
+    restart
+    ;;
+  *)
+  echo "Usage: $0 {start|stop|restart}"
+  exit 1
+esac
+
+exit $?

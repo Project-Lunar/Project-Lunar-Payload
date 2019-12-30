@@ -1,0 +1,134 @@
+#!/bin/sh
+#
+#  Copyright 2019 ModMyClassic (https://modmyclassic.com/license)
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+###############################################################################
+# Project Lunar - NAND Initiator
+# ModMyClassic.com / https://discordapp.com/invite/8gygsrw
+###############################################################################
+
+###############################################################################
+### Local Variables
+
+PROJECTLUNAR_PATH="/opt/project_lunar"
+
+###############################################################################
+### Local Functions
+
+init_nandg()
+{
+  if [ -z "$(grep /dev/nandg /etc/fstab)" ]; then 
+    echo "[PROJECT LUNAR](INIT) Formatting extra partition..."
+    if [ "$(mke2fs -t ext4 /dev/nandg)" ]; then
+      [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "ro" ] && mount -o remount,rw "/" && export RW_CHANGE=1
+      mkdir -p "${PROJECTLUNAR_PATH}"
+      echo "/dev/nandg      ${PROJECTLUNAR_PATH}      ext4    mode=0755        0       0" >> "/etc/fstab"
+      mount "/dev/nandg" "${PROJECTLUNAR_PATH}"
+      [ ! -z ${RW_CHANGE} ] && [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "rw" ] && mount -o remount,ro "/"
+      echo "[PROJECT LUNAR](INIT) Formatted extra partition..."
+    else
+      echo "[PROJECT LUNAR](FATAL ERROR) NANDG FORMAT FAILED!" && exit 1
+    fi
+  fi
+}
+
+mount_nandg()
+{
+  if [ ! -d "${PROJECTLUNAR_PATH}" ]; then
+    [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "ro" ] && mount -o remount,rw "/" && export RW_CHANGE=1
+    mkdir -p "${PROJECTLUNAR_PATH}"
+    [ ! -z ${RW_CHANGE} ] && [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "rw" ] && mount -o remount,ro "/"
+  fi
+  [ -z "$(mount | grep /dev/nandg)" ] && mount "/dev/nandg" "${PROJECTLUNAR_PATH}"
+}
+
+check_libexec() {
+  if [ ! -d "/usr/libexec" ]; then
+    [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "ro" ] && mount -o remount,rw "/" && RW_CHANGE=1
+    mkdir -p "/usr/libexec"
+    [ ! -z ${RW_CHANGE} ] && [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "rw" ] && mount -o remount,ro "/"
+  fi
+}
+
+toggle_overmount() {
+  if [ "${1}" != "0" ] && [ "${1}" != "1" ]; then
+    echo "[PROJECT LUNAR](ERROR) Bad usage of toggle_overmount()" && return 1
+  fi
+  KEY_DIRECTORIES="bin;etc;lib;var;usr/libexec;usr/local"
+  check_libexec
+  if [ "${1}" = "1" ]; then
+    echo "[PROJECT LUNAR](INIT) Overmounting key directories..."
+    for x in ${KEY_DIRECTORIES//;/ }; do
+      if [ -z "$(mount | grep -i overlayfs-${x})" ]; then
+        echo "Overmounting /${x}..."
+        mount -t overlayfs -o lowerdir="/${x}",upperdir="/opt/project_lunar/${x}" "overlayfs-${x}" "/${x}"
+        if [ -z "$(mount | grep -i overlayfs-${x})" ]; then
+          echo "[PROJECT LUNAR](ERROR) FAILED TO OVERMOUNT /${x}"
+        fi
+      fi
+    done
+  else
+    echo "[PROJECT LUNAR](INIT) Unmounting key directories..."
+    for x in ${KEY_DIRECTORIES//;/ }; do
+      echo "Unmounting /${x}..."
+      cd "/" && umount -f "/${x}" || echo "[PROJECT LUNAR](ERROR) FAILED TO UNMOUNT /${x}"
+    done
+  fi
+}
+
+###############################################################################
+### Service
+
+start() {
+  echo "==============================================================================="
+  echo "Initialising Project Lunar NAND setup..."
+  echo "==============================================================================="
+  echo "[PROJECT LUNAR](INIT) Execute init_nandg()"
+  init_nandg
+  echo "[PROJECT LUNAR](INIT) Execute mount_nandg()"
+  mount_nandg
+  echo "[PROJECT LUNAR](INIT) Execute toggle_overmount()"
+  toggle_overmount 1
+  echo "==============================================================================="
+  echo "Initialised Project Lunar nand setup OK!"
+  echo "==============================================================================="
+}
+
+stop() {
+  echo "==============================================================================="
+  echo "Stopping Project Lunar NAND..."
+  echo "==============================================================================="
+  toggle_overmount 0
+  echo "OK"
+}
+
+case "$1" in
+  start)
+    start &> /tmp/project_lunar.log
+    ;;
+  stop)
+    stop
+    ;;
+  restart|reload)
+    stop
+    start
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|restart}"
+    exit 1
+esac
+
+exit $?

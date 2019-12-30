@@ -1,0 +1,4 @@
+{
+  "bool": ["toggle_blast_processing","toggle_overcommit_memory","toggle_memory_optimisation","toggle_external_swap","toggle_splash","toggle_kiosk","toggle_RDNIS","toggle_rw_root_fs","toggle_root_password"],
+  "theme": ["selected_theme"]
+}

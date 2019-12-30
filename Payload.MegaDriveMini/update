@@ -1,0 +1,371 @@
+#!/bin/sh
+#
+#  Copyright 2019 ModMyClassic (https://modmyclassic.com/license)
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+###############################################################################
+# Project Lunar - Primary Mod Updater
+# ModMyClassic.com / https://discordapp.com/invite/8gygsrw
+###############################################################################
+
+###############################################################################
+### Configuration
+
+###############################################################################
+### Local Variables
+
+PROJECTLUNAR_PATH="/opt/project_lunar"
+INSTALLFILES_PATH="/tmp"
+BACKUPFILES_PATH="/tmp"
+
+###############################################################################
+### Local Functions
+
+led_flash() {
+  SLEEP=0.2
+  while true; do
+    echo 0 >/sys/class/leds/led1/brightness
+    sleep ${SLEEP}
+    echo 255 >/sys/class/leds/led1/brightness
+    sleep ${SLEEP}
+  done
+}
+
+kill_ui_programs() {
+  killall -s TERM sdl_display retroarch emulationstation boot_menu start_retroarch start_emustation start_bootmenu start_m2engage aplay es_bg_music &> "/dev/null"
+  /etc/init.d/moon-game stop &> "/dev/null"
+}
+
+init_nandg() {
+  echo "[PROJECT LUNAR](INIT) Formatting extra partition..."
+  if [ "$(mke2fs -t ext4 /dev/nandg)" ]; then
+    [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "ro" ] && mount -o remount,rw "/" && export RW_CHANGE=1
+    sed -i 's+/dev/nandg      /opt/project_lunar      ext4    defaults,rw        0       0++g' "/etc/fstab"
+    echo "/dev/nandg      ${PROJECTLUNAR_PATH}      ext4    defaults,rw        0       0" >> "/etc/fstab"
+    [ ! -z ${RW_CHANGE} ] && [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "rw" ] && mount -o remount,ro "/"
+    [ -z "$(grep /dev/nandg /etc/fstab)" ] && return 1
+    echo "[PROJECT LUNAR](INIT) Formatted extra partition..."
+  else
+    echo "[PROJECT LUNAR](FATAL ERROR) NANDG FORMAT FAILED!" && return 1
+  fi
+  return 0
+}
+
+mount_nandg() {
+  if [ ! -d "${PROJECTLUNAR_PATH}" ]; then
+    [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "ro" ] && mount -o remount,rw "/" && export RW_CHANGE=1
+    mkdir -p "${PROJECTLUNAR_PATH}" || return 1
+    [ ! -z ${RW_CHANGE} ] && [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "rw" ] && mount -o remount,ro "/"
+  fi
+  mount "/dev/nandg" "${PROJECTLUNAR_PATH}" || return 1
+  return 0
+}
+
+toggle_rw_root_fs() {
+  if [ "${1}" != "0" ] && [ "${1}" != "1" ]; then
+    echo "[PROJECT LUNAR](ERROR) Bad usage of toggle_rw_root_fs()" && return 1
+  fi
+  if [ "${1}" = "1" ]; then
+    mount -o remount,rw "/" || return 1
+  else
+    mount -o remount,ro "/" || return 1
+  fi
+  return 0
+}
+
+backup_custom_kernel() {
+  echo "[PROJECT LUNAR](BACKUP) Backing up Custom Kernel..."
+  mkdir -p "/tmp/backup"
+  cp -fv "/dev/nandb" "/tmp/"
+  mount "/dev/nandc" "/tmp/backup/" && cp -fv "/tmp/backup/uImage" "/tmp/" && umount "/tmp/backup"
+  cp -fv "/lib/modules/3.4.113/extra/mali.ko" "/tmp/"
+  cd "${INSTALLFILES_PATH}" && tar -cvf "$(cat /version)-custom-kernel.tar" "nandb" "uImage" "mali.ko"
+  gzip "$(cat /version)-custom-kernel.tar"
+  rm -rf "/tmp/magic.bin" "/tmp/nandb" "/tmp/uImage" "/tmp/mali.ko" "/tmp/backup"
+  [ ! -f "${INSTALLFILES_PATH}/$(cat /version)-custom-kernel.tar.gz" ] && echo "[PROJECT LUNAR](FATAL ERROR) CUSTOM KERNEL BACKUP FAILED!" && return 1
+  echo "[PROJECT LUNAR](BACKUP) CUSTOM Kernel file: $(cat /version)-custom-kernel.tar.gz created!"
+  return 0
+}
+
+revert_kernel() {
+  cd "${INSTALLFILES_PATH}"
+  gunzip -d "$(cat /version)-custom-kernel.tar.gz"
+  tar -xvf "$(cat /version)-custom-kernel.tar"
+  echo "[PROJECT LUNAR](UNINSTALL) Flashing old custom kernel"
+  rm -f "/lib/modules/3.4.113/extra/mali.ko"
+  mkdir -p "${INSTALLFILES_PATH}/mount"
+  mount "/dev/nandc" "${INSTALLFILES_PATH}/mount"
+  cp -fav "${BACKUPFILES_PATH}/kernel/mali.ko" "/lib/modules/3.4.113/extra/"
+  cp -fav "${BACKUPFILES_PATH}/kernel/uImage" "${INSTALLFILES_PATH}/mount/"
+  sleep 0.5 #Lets be safe...
+  umount "${INSTALLFILES_PATH}/mount" && rm -rf "${INSTALLFILES_PATH}/mount"
+  return 1
+}
+
+revert_copy() {
+  umount -f "${PROJECTLUNAR_PATH}"
+  rm -rf "${PROJECTLUNAR_PATH}"
+  rm -rf "/root/.ash_history"
+  rm -rf "/root/.para"
+  for x in "/etc/init.d/"*"_PL"*; do
+    rm -rf "${x}"
+  done
+  return 0
+}
+
+revert_nandg() {
+  echo "[PROJECT LUNAR](UNINSTALL) Reverting extra partition..."
+  dd if="/dev/zero" of="/dev/nandg" bs=1M
+  [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "ro" ] && mount -o remount,rw "/" && RW_CHANGE=1
+  sed -i 's+/dev/nandg      /opt/project_lunar      ext4    defaults,rw        0       0++g' "/etc/fstab"
+  [ ! -z ${RW_CHANGE} ] && [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "rw" ] && mount -o remount,ro "/"
+  echo "[PROJECT LUNAR](UNINSTALL) Reverted extra partition..."
+  exit 1
+}
+
+toggle_rootfs_data_mounts() {
+  if [ "${1}" != "0" ] && [ "${1}" != "1" ]; then
+    echo "[PROJECT LUNAR](ERROR) Bad usage of toggle_rootfs_data_mounts()" && return 1
+  fi
+  if [ "${1}" = "1" ]; then
+    echo "[PROJECT LUNAR](INFO) Mounting rootfs_data..."
+    # RetroArch
+    if [ -f "/opt/project_lunar/opt/retroarch/retroarch" ]; then
+      SOURCEDIR="/rootfs_data/project_lunar/retroarch"
+      TARGETDIR="/opt/project_lunar/opt/retroarch/config/retroarch"
+      echo "Mounting: ${SOURCEDIR}..."
+      mount -t overlayfs -o lowerdir="${TARGETDIR}",upperdir="${SOURCEDIR}" "overlayfs-NAND-$(basename ${SOURCEDIR})" "${TARGETDIR}"
+    fi
+    # M2engage System
+    SOURCEDIR="/rootfs_data/project_lunar/m2engage/system"
+    TARGETDIR="/usr/game/system"
+    [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "ro" ] && mount -o remount,rw / && RW_CHANGE=1
+    [ ! -d "${TARGETDIR}" ] && mkdir -p "${TARGETDIR}" #DEBUG
+    [ ! -z ${RW_CHANGE} ] && [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "rw" ] && mount -o remount,ro "/"
+    echo "Mounting: ${SOURCEDIR}..."
+    mount -t overlayfs -o lowerdir="${TARGETDIR}",upperdir="${SOURCEDIR}" "overlayfs-NAND-$(basename ${SOURCEDIR})" "${TARGETDIR}"
+    # M2engage Region
+    SOURCEDIR="/rootfs_data/project_lunar/m2engage/region"
+    TARGETDIR="/usr/game/$(get_region)"
+    [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "ro" ] && mount -o remount,rw / && RW_CHANGE=1
+    [ ! -d "${TARGETDIR}" ] && mkdir -p "${TARGETDIR}" #DEBUG
+    [ ! -z ${RW_CHANGE} ] && [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "rw" ] && mount -o remount,ro "/"
+    echo "Mounting: ${SOURCEDIR}..."
+    mount -t overlayfs -o lowerdir="${TARGETDIR}",upperdir="${SOURCEDIR}" "overlayfs-NAND-$(basename ${SOURCEDIR})" "${TARGETDIR}"
+  else
+    echo "[PROJECT LUNAR](INFO) Unmounting rootfs_data..."
+    # RetroArch
+    if [ -f "/opt/project_lunar/opt/retroarch/retroarch" ]; then
+      TARGETDIR="/opt/project_lunar/opt/retroarch/config/retroarch"
+      echo "Unmounting ${TARGETDIR}..."
+      umount -f "${TARGETDIR}"
+    fi
+    # M2engage System
+    TARGETDIR="/usr/game/system"
+    echo "Unmounting ${TARGETDIR}..."
+    umount -f "${TARGETDIR}"
+    # M2engage Region
+    TARGETDIR="/usr/game/$(get_region)"
+    echo "Unmounting ${TARGETDIR}..."
+    umount -f "${TARGETDIR}"
+  fi
+}
+
+toggle_usb_mounts() {
+  if [ "${1}" != "0" ] && [ "${1}" != "1" ]; then
+    echo "[PROJECT LUNAR](ERROR) Bad usage of toggle_rootfs_data_mounts()" && return 1
+  fi
+  [ -z "$(mount | grep /media)" ] && echo "[PROJECT LUNAR](ERROR) USB is not mounted!" && return 1
+  if [ "${1}" = "1" ]; then
+    echo "[PROJECT LUNAR](INFO) Overmounting external media..."
+    toggle_rootfs_data_mounts 0 # Unmount NAND rootfs and use media instead
+    check_selected_usb_firmware # Check selected firmware exists, otherwise just prep anyway
+    # RetroArch
+    if [ -f "/opt/project_lunar/opt/retroarch/retroarch" ]; then
+      SOURCEDIR="/media/project_lunar/retroarch"
+      TARGETDIR="/opt/project_lunar/opt/retroarch/config/retroarch"
+      echo "Mounting: ${SOURCEDIR}..."
+      mount -t overlayfs -o lowerdir="${TARGETDIR}",upperdir="${SOURCEDIR}" "overlayfs-MEDIA-$(basename ${SOURCEDIR})" "${TARGETDIR}"
+    fi
+    # M2engage System
+    SOURCEDIR="/media/project_lunar/m2engage${USBSELECTEDFIRMWARE}/system"
+    TARGETDIR="/usr/game/system"
+    [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "ro" ] && mount -o remount,rw / && RW_CHANGE=1
+    [ ! -d "${TARGETDIR}" ] && mkdir -p "${TARGETDIR}" #DEBUG
+    [ ! -z ${RW_CHANGE} ] && [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "rw" ] && mount -o remount,ro "/"
+    echo "Mounting: ${SOURCEDIR}..."
+    mount -t overlayfs -o lowerdir="${TARGETDIR}",upperdir="${SOURCEDIR}" "overlayfs-MEDIA-$(basename ${SOURCEDIR})" "${TARGETDIR}"
+    # M2engage Region
+    SOURCEDIR="/media/project_lunar/m2engage${USBSELECTEDFIRMWARE}/region"
+    TARGETDIR="/usr/game/$(get_region)"
+    [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "ro" ] && mount -o remount,rw / && RW_CHANGE=1
+    [ ! -d "${TARGETDIR}" ] && mkdir -p "${TARGETDIR}" #DEBUG
+    [ ! -z ${RW_CHANGE} ] && [ "$(mount | head -n2 | tail -n1 | awk -F \( '{ print $2 }' | cut -c -2)" = "rw" ] && mount -o remount,ro "/"
+    echo "Mounting: ${SOURCEDIR}..."
+    mount -t overlayfs -o lowerdir="${TARGETDIR}",upperdir="${SOURCEDIR}" "overlayfs-MEDIA-$(basename ${SOURCEDIR})" "${TARGETDIR}"
+    # Savestates
+    SOURCEDIR="/media/mega_drive_saves"
+    TARGETDIR="/rootfs_data"
+    echo "Mounting: ${SOURCEDIR}..."
+    mount -t overlayfs -o lowerdir="${TARGETDIR}",upperdir="${SOURCEDIR}" "overlayfs-MEDIA-$(basename ${SOURCEDIR})" "${TARGETDIR}"
+  else
+    echo "[PROJECT LUNAR](INFO) Unmounting external media..."
+    # RetroArch
+    if [ -f "/opt/project_lunar/opt/retroarch/retroarch" ]; then
+      TARGETDIR="/opt/project_lunar/opt/retroarch/config/retroarch"
+      echo "Unmounting ${TARGETDIR}..."
+      umount -f "${TARGETDIR}"
+    fi
+    # M2engage System
+    TARGETDIR="/usr/game/system"
+    echo "Unmounting ${TARGETDIR}..."
+    umount -f "${TARGETDIR}"
+    # M2engage Region
+    TARGETDIR="/usr/game/$(get_region)"
+    echo "Unmounting ${TARGETDIR}..."
+    umount -f "${TARGETDIR}"
+    # Savestates
+    TARGETDIR="/rootfs_data"
+    echo "Unmounting ${TARGETDIR}..."
+    umount -f "${TARGETDIR}"
+  fi
+}
+
+toggle_overmount() {
+  if [ "${1}" != "0" ] && [ "${1}" != "1" ]; then
+    echo "[PROJECT LUNAR](ERROR) Bad usage of toggle_overmount()" && return 1
+  fi
+  KEY_DIRECTORIES="bin;etc;lib;var;usr/libexec;usr/local"
+  check_libexec
+  if [ "${1}" = "1" ]; then
+    echo "[PROJECT LUNAR](INFO) Overmounting key directories..."
+    for x in ${KEY_DIRECTORIES//;/ }; do
+      if [ -z "$(mount | grep -i overlayfs-${x})" ]; then
+        echo "Overmounting /${x}..."
+        mount -t overlayfs -o lowerdir="/${x}",upperdir="/opt/project_lunar/${x}" "overlayfs-${x}" "/${x}"
+        if [ -z "$(mount | grep -i overlayfs-${x})" ]; then
+          echo "[PROJECT LUNAR](ERROR) FAILED TO OVERMOUNT /${x}"
+        fi
+      fi
+    done
+  else
+    echo "[PROJECT LUNAR](INFO) Unmounting key directories..."
+    for x in ${KEY_DIRECTORIES//;/ }; do
+      echo "Unmounting /${x}..."
+      cd "/" && umount -f "/${x}" || echo "[PROJECT LUNAR](ERROR) FAILED TO UNMOUNT /${x}"
+    done
+  fi
+}
+
+prepare_nandc() {
+  echo "[PROJECT LUNAR](INSTALL) Preparing kernel partition..."
+  umount "${INSTALLFILES_PATH}/mount"
+  sync
+  ${INSTALLFILES_PATH}${PROJECTLUNAR_PATH}/bin/fsck.fat -y "/dev/nandc"
+  sync
+  mount "/dev/nandc" "${INSTALLFILES_PATH}/mount"
+  rm -rf "${INSTALLFILES_PATH}/mount/"*
+  df -h
+  sync
+}
+
+repair_nandc() {
+  echo "[PROJECT LUNAR](INSTALL) Repairing kernel partition..."
+  #gzip -c "/dev/nandc" > "/tmp/nandc_for_investigation.gz"
+  umount -f "${INSTALLFILES_PATH}/mount" &> "/dev/null"
+  ${INSTALLFILES_PATH}${PROJECTLUNAR_PATH}/bin/busybox-pl mkfs.vfat -v "/dev/nandc"
+  umount -f "${INSTALLFILES_PATH}/mount" &> "/dev/null"
+  mount "/dev/nandc" "${INSTALLFILES_PATH}/mount"
+  sync
+}
+
+check_no_ramdisk(){
+  if [ -z "$(grep "noinitrd" /proc/cmdline)" ]; then
+    echo "[PROJECT LUNAR](FATAL ERROR) YOU CAN'T RUN THIS SCRIPT FROM A RAMDISK!"
+    exit 1
+  fi
+}
+
+###############################################################################
+### Main
+
+main() {
+  check_no_ramdisk
+  echo "==============================================================================="
+  echo "Starting Project Lunar update..."
+  echo "==============================================================================="
+  led_flash > "/dev/null" 2>&1 &
+  kill_ui_programs
+  echo "[PROJECT LUNAR](UPDATE) Displaying splash"
+  ${INSTALLFILES_PATH}${PROJECTLUNAR_PATH}/bin/sdl_display "${INSTALLFILES_PATH}${PROJECTLUNAR_PATH}/etc/project_lunar/IMG/splashscreen.png" &
+  echo "[PROJECT LUNAR](UPDATE) Make sure no mounts are active..."
+  toggle_usb_mounts 0 &> "/dev/null"
+  toggle_rootfs_data_mounts 0 &> "/dev/null"
+  toggle_overmount 0 &> "/dev/null"
+  echo "[PROJECT LUNAR](UPDATE) Execute toggle_rw_root_fs()"
+  toggle_rw_root_fs 1 || exit 1
+  echo "[PROJECT LUNAR](UPDATE) Copying deployment"
+  cd "${INSTALLFILES_PATH}"
+  cp -fva "${INSTALLFILES_PATH}/etc" "/" || FAIL_S1=1
+  cp -fva "${INSTALLFILES_PATH}/opt" "/" || FAIL_S1=1
+  cp -fva "${INSTALLFILES_PATH}/uninstall" "/opt/" && chmod +x "/opt/uninstall" || FAIL_S1=1
+  cp -fva "${INSTALLFILES_PATH}/pl_version" "/opt/project_lunar/pl_version" || FAIL_S1=1
+  tar -xvf "${INSTALLFILES_PATH}/RetroArch"* || FAIL_S1=1
+  mkdir -p "${PROJECTLUNAR_PATH}/opt" || FAIL_S1=1
+  cp -fr "${INSTALLFILES_PATH}/retroarch" "${PROJECTLUNAR_PATH}/opt/" || FAIL_S1=1
+  if [ ! -z "${FAIL_S1}" ]; then
+    echo "[PROJECT LUNAR](FATAL ERROR) Transfer of update payload failed!"
+    exit 1
+  fi
+  cd ${INSTALLFILES_PATH}
+  echo "[PROJECT LUNAR](UPDATE) Generating local custom kernel backup"
+  backup_custom_kernel || FAIL_S2=1
+  if [ ! -z "${FAIL_S1}" ]; then
+    echo "[PROJECT LUNAR](FATAL ERROR) Failed to backup current custom kernel!"
+    exit 1
+  fi
+  echo "[PROJECT LUNAR](UPDATE) Flashing Project Lunar kernel"
+  mkdir -p "${INSTALLFILES_PATH}/mount" || FAIL_S3=1
+  mount "/dev/nandc" "${INSTALLFILES_PATH}/mount" || FAIL_S3=1
+  cp -f "${INSTALLFILES_PATH}/kernel/mali.ko" "/lib/modules/3.4.113/extra/" || FAIL_S3=1
+  prepare_nandc
+  AVAILABLE="$(($(df -P /dev/nandc | tail -1 | awk '{ print $4 }') * 1000))"
+  KERNELSIZE="$(ls -l /tmp/kernel/uImage | awk '{ print $5 }')"
+  if [ ! "${KERNELSIZE}" -lt "${AVAILABLE}" ]; then
+    repair_nandc
+  fi
+  cp -f "${INSTALLFILES_PATH}/kernel/uImage" "${INSTALLFILES_PATH}/mount/" || FAIL_S3=1
+  sync
+  sleep 0.5 #Lets be safe...
+  umount "${INSTALLFILES_PATH}/mount" && rm -rf "${INSTALLFILES_PATH}/mount"
+  if [ ! -z "${FAIL_S3}" ]; then
+    echo "[PROJECT LUNAR](FATAL ERROR) Failed to upload new custom kernel! Reverting..."
+    revert_kernel
+  fi
+  echo "[PROJECT LUNAR](UPDATE) Displaying finished splash"
+  kill_ui_programs
+  echo "==============================================================================="
+  echo "Project Lunar updated successfully!"
+  echo "==============================================================================="
+  ${INSTALLFILES_PATH}${PROJECTLUNAR_PATH}/bin/sdl_display "${INSTALLFILES_PATH}${PROJECTLUNAR_PATH}/etc/project_lunar/IMG/PL_UpdateDone.png" &
+  sync
+  sleep 5
+  reboot
+}
+
+###############################################################################
+### Execute
+
+main "$@"
