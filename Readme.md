@@ -1,5 +1,7 @@
 <div align="center">
+  
 ![MMC banner](https://modmyclassic.com/wp-content/uploads/2019/09/PL_fullColour_Large2-1024x380.png)
+
 </div>
 
 # Project Lunar modification tool for the SEGA Mega Drive/Genesis Mini
@@ -21,7 +23,9 @@ Discord Support Channel here: https://discord.me/modmyclassic
 ## Automated Dev-Ops with Gitlab CI / CD
 
 <div align="center">
+  
 ![logo](https://i.imgur.com/jCA6WWK.png)
+
 </div>
 
 This Project is powered by GitLab's CI/CD automated dev ops. This means this project will **automatically build, test and deploy**
